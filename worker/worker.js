@@ -184,6 +184,16 @@ const workerInstances = queues.map(name => {
     await client.lpush('scheduler:metrics:latency', String(latency));
     await client.ltrim('scheduler:metrics:latency', 0, 499);
 
+    if ((job.opts && job.opts.delay) > 0) {
+      await client.lpush('scheduler:metrics:precision', JSON.stringify({
+        scheduledFor,
+        processedAt,
+        deltaMs: waitMs,
+        at: Date.now()
+      }));
+      await client.ltrim('scheduler:metrics:precision', 0, 499);
+    }
+
     await publish(client, 'job:completed', {
       id: String(job.id),
       queue: name,
