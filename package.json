@@ -1,0 +1,20 @@
+{
+  "name": "distributed-task-scheduler",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "api": "node api/server.js",
+    "worker": "node worker/worker.js",
+    "seed": "node scripts/seed.js",
+    "loadtest": "node scripts/loadtest.js"
+  },
+  "dependencies": {
+    "@opengsd/gsd-browser": "^0.2.2",
+    "bullmq": "^5.58.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "ioredis": "^5.4.2"
+  }
+}

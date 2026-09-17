@@ -1,0 +1,19 @@
+# Dependencies and generated builds
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Local configuration and Redis runtime data
+.env
+dump.rdb
+*.aof
+
+# Local agent/editor state
+.agents/
+skills-lock.json
+
+# Logs and OS metadata
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
