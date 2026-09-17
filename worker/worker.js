@@ -175,7 +175,7 @@ const workerInstances = queues.map(name => {
     const latency = Date.now() - processedAt;
 
     await client.lpush('scheduler:metrics:waits', JSON.stringify({
-      priority: (job.opts && job.opts.priority) || 0,
+      priority: (job.data && job.data.originalPriority) || (job.opts && job.opts.priority) || 0,
       waitMs,
       at: Date.now()
     }));

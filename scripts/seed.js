@@ -42,7 +42,7 @@ async function enqueueJob(queueName, payload, options = {}) {
     bullOptions.repeat = { pattern: String(options.cron) };
   }
 
-  const job = await q.add('task', { payload, scheduledFor, cron: options.cron || null }, bullOptions);
+  const job = await q.add('task', { payload, scheduledFor, cron: options.cron || null, originalPriority: options.priority || 5 }, bullOptions);
   await rememberQueue(client, queueName);
   await publish(client, 'job:added', {
     id: String(job.id),

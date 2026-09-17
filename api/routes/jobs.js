@@ -69,7 +69,7 @@ router.post('/', async (req, res, next) => {
     }
     const scheduledFor = Date.now() + delay;
     const q = queue(queueName);
-    const job = await q.add('task', { payload, scheduledFor, cron: cron || null }, options);
+    const job = await q.add('task', { payload, scheduledFor, cron: cron || null, originalPriority: prio }, options);
     await rememberQueue(req.app.locals.redis, queueName);
 
     const record = { ...serialize(job), status: delay > 0 ? 'delayed' : 'waiting' };
