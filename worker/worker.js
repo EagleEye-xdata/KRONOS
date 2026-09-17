@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { Worker } = require('bullmq');
 const os = require('os');
+const { randomUUID } = require('crypto');
 const { redis, connectionOptions, publish } = require('../api/lib');
 
 const args = process.argv.slice(2);
@@ -44,6 +45,60 @@ async function heartbeat() {
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+async function releaseLease(lockKey, token) {
+  await client.eval(
+    'if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) end return 0',
+    1,
+    lockKey,
+    token
+  );
+}
+
+async function renewLease(lockKey, token) {
+  return client.eval(
+    'if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("PEXPIRE", KEYS[1], ARGV[2]) end return 0',
+    1,
+    lockKey,
+    token,
+    '12000'
+  );
+}
+
+async function runIdempotently(job, payload, execute) {
+  const scope = payload.idempotencyKey ? `custom:${String(payload.idempotencyKey)}` : `job:${job.id}`;
+  const completedKey = `scheduler:idempotency:${scope}`;
+  const lockKey = `${completedKey}:lock`;
+  const existing = await client.get(completedKey);
+  if (existing) {
+    return { workerId: String(id), idempotentSkip: true, note: 'Skipped side-effects: completed outcome already recorded', previousResult: JSON.parse(existing) };
+  }
+
+  const token = randomUUID();
+  const deadline = Date.now() + 15000;
+  let claimed = false;
+  while (Date.now() < deadline && !claimed) {
+    claimed = (await client.set(lockKey, token, 'PX', 12000, 'NX')) === 'OK';
+    if (!claimed) {
+      const completed = await client.get(completedKey);
+      if (completed) {
+        return { workerId: String(id), idempotentSkip: true, note: 'Skipped side-effects: completed outcome already recorded', previousResult: JSON.parse(completed) };
+      }
+      await sleep(500);
+    }
+  }
+  if (!claimed) throw new Error('idempotency lease is still held; retrying safely');
+
+  const renewalTimer = setInterval(() => renewLease(lockKey, token).catch(() => {}), 3000);
+  try {
+    const result = await execute();
+    await client.set(completedKey, JSON.stringify(result), 'EX', 86400);
+    return result;
+  } finally {
+    clearInterval(renewalTimer);
+    await releaseLease(lockKey, token).catch(() => {});
+  }
+}
+
 async function processJob(job) {
   currentJobId = String(job.id);
   await heartbeat();
@@ -67,43 +122,26 @@ async function processJob(job) {
 
   const payload = job.data && job.data.payload ? job.data.payload : {};
 
-  // Idempotency Guard:
-  // At-least-once delivery + Idempotent handlers = Effectively-once execution.
-  // Guard against duplicate execution across retries, reassignments, or multi-delivery.
-  const customKey = payload.idempotencyKey ? String(payload.idempotencyKey) : null;
-  const dedupKey = customKey
-    ? `scheduler:idempotency:custom:${customKey}`
-    : `scheduler:idempotency:job:${job.id}`;
+  // At-least-once delivery + atomic idempotency lease = effectively-once outcome.
+  // A lease prevents concurrent redelivery from repeating a side-effect; a completed
+  // marker makes later retries return the original outcome for 24 hours.
+  return runIdempotently(job, payload, async () => {
+    const workMs = Number(payload.workMs) || (2000 + Math.floor(Math.random() * 6001));
+    await sleep(workMs);
 
-  const previousResult = await client.get(dedupKey);
-  if (previousResult) {
-    console.log(`[Idempotency] Job #${job.id} previously executed. Skipping duplicate side-effects.`);
-    return {
-      workerId: String(id),
-      idempotentSkip: true,
-      note: 'Skipped side-effects: handler is idempotent',
-      processedAt
-    };
-  }
+    const forcedFailures = Number.isFinite(Number(payload.forceFailAttempts))
+      ? Math.max(0, Number(payload.forceFailAttempts))
+      : (payload.forceFail ? 3 : 0);
+    if (job.attemptsMade < forcedFailures) {
+      throw new Error('forced demo failure');
+    }
 
-  const workMs = Number(payload.workMs) || (2000 + Math.floor(Math.random() * 6001));
-  await sleep(workMs);
-
-  if (payload.forceFail) {
-    throw new Error('forced demo failure');
-  }
-
-  // 10% simulated transient failure to exercise retries (unless explicitly disabled)
-  if (!payload.noSimulatedFailures && Math.random() < 0.10) {
-    throw new Error('simulated transient worker failure');
-  }
-
-  const result = { workerId: String(id), workMs, processedAt };
-
-  // Store completion marker with 24-hour TTL
-  await client.set(dedupKey, JSON.stringify(result), 'EX', 86400);
-
-  return result;
+    // 10% simulated transient failure to exercise retries (unless explicitly disabled)
+    if (!payload.noSimulatedFailures && Math.random() < 0.10) {
+      throw new Error('simulated transient worker failure');
+    }
+    return { workerId: String(id), workMs, processedAt };
+  });
 }
 
 // Pass the shared connection options object (not a raw IORedis instance)
