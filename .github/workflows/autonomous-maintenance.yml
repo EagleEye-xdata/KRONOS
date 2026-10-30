@@ -12,7 +12,9 @@ on:
         type: string
         default: general maintenance
 
-permissions: {}
+permissions:
+  contents: write
+  pull-requests: write
 
 concurrency:
   group: codex-maintenance-${{ github.repository }}
@@ -31,4 +33,5 @@ jobs:
       project_context: Preserve task scheduling correctness, priority aging behavior, dead-letter queue handling, and observability contracts. Do not modify infrastructure, dependency manifests, or production queue credentials.
       focus: ${{ inputs.focus || 'general maintenance' }}
       delivery_mode: direct
-    secrets: inherit
+    secrets:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
