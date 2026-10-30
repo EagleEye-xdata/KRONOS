@@ -1,0 +1,33 @@
+name: Scheduled Codex maintenance
+
+on:
+  schedule:
+    # 09:00, 12:00, 15:00, 18:00, and 22:00 Asia/Kolkata (UTC+05:30).
+    - cron: "30 3,6,9,12,16 * * *"
+  workflow_dispatch:
+    inputs:
+      focus:
+        description: Optional bounded maintenance focus
+        required: false
+        type: string
+        default: general maintenance
+
+permissions: {}
+
+concurrency:
+  group: codex-maintenance-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  maintenance:
+    uses: EagleEye-xdata/EagleEye-xdata/.github/workflows/reusable-autonomous-maintenance.yml@main
+    with:
+      project_name: KRONOS distributed task scheduler
+      validation_commands: |
+        npm ci
+        npm ci --prefix frontend
+        npm run build
+      allowed_path_pattern: '^(api/|worker/|frontend/|scripts/|README\.md$|docs/|\.codex/development-state\.json$)'
+      project_context: Preserve task scheduling correctness, priority aging behavior, dead-letter queue handling, and observability contracts. Do not modify infrastructure, dependency manifests, or production queue credentials.
+      focus: ${{ inputs.focus || 'general maintenance' }}
+    secrets: inherit
