@@ -30,4 +30,5 @@ jobs:
       allowed_path_pattern: '^(api/|worker/|frontend/|scripts/|README\.md$|docs/|\.codex/development-state\.json$)'
       project_context: Preserve task scheduling correctness, priority aging behavior, dead-letter queue handling, and observability contracts. Do not modify infrastructure, dependency manifests, or production queue credentials.
       focus: ${{ inputs.focus || 'general maintenance' }}
+      delivery_mode: direct
     secrets: inherit
